@@ -219,9 +219,16 @@ class Manager(object):
                 dom = parseString(response.text.encode(response.encoding))
                 data = self.convert_to_dict(self.walk_dom(dom))
                 results = self._get_results(data)
+
+                   
+                print "XERO RESULT:"
+
                 # If we're dealing with Manager.get, return a single object.
                 if singleobject and isinstance(results, list):
+                    print results[0]
                     return results[0]
+
+                print results
                 return results
 
             elif response.status_code == 400:
