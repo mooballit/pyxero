@@ -1,21 +1,25 @@
 import unittest
-from datetime import datetime, timedelta
 
+from datetime import datetime, timedelta
 from mock import patch, Mock
 
 from xero.auth import PublicCredentials, PartnerCredentials
-from xero.exceptions import *
+from xero.exceptions import XeroException, XeroNotVerified, XeroUnauthorized
 
 
 class PublicCredentialsTest(unittest.TestCase):
     @patch('requests.post')
     def test_initial_constructor(self, r_post):
         "Initial construction causes a requst to get a request token"
-        r_post.return_value = Mock(status_code=200, text='oauth_token=token&oauth_token_secret=token_secret')
+        r_post.return_value = Mock(
+            status_code=200,
+            text='oauth_token=token&oauth_token_secret=token_secret'
+        )
 
         credentials = PublicCredentials(
             consumer_key='key',
-            consumer_secret='secret'
+            consumer_secret='secret',
+            scope='payroll.endpoint'
         )
 
         # A HTTP request was made
@@ -32,13 +36,17 @@ class PublicCredentialsTest(unittest.TestCase):
             'consumer_secret': 'secret',
             'oauth_token': 'token',
             'oauth_token_secret': 'token_secret',
-            'verified': False
+            'verified': False,
+            'scope': 'payroll.endpoint'
         })
 
     @patch('requests.post')
     def test_bad_credentials(self, r_post):
         "Initial construction with bad credentials raises an exception"
-        r_post.return_value = Mock(status_code=401, text='oauth_problem=consumer_key_unknown&oauth_problem_advice=Consumer%20key%20was%20not%20recognised')
+        r_post.return_value = Mock(
+            status_code=401,
+            text='oauth_problem=consumer_key_unknown&oauth_problem_advice=Consumer%20key%20was%20not%20recognised'
+        )
 
         with self.assertRaises(XeroUnauthorized):
             PublicCredentials(
@@ -97,19 +105,41 @@ class PublicCredentialsTest(unittest.TestCase):
     @patch('requests.post')
     def test_url(self, r_post):
         "The request token URL can be obtained"
-        r_post.return_value = Mock(status_code=200, text='oauth_token=token&oauth_token_secret=token_secret')
+        r_post.return_value = Mock(
+            status_code=200,
+            text='oauth_token=token&oauth_token_secret=token_secret'
+        )
 
         credentials = PublicCredentials(
             consumer_key='key',
             consumer_secret='secret'
         )
 
-        self.assertEquals(credentials.url, 'https://api.xero.com/oauth/Authorize?oauth_token=token')
+        self.assertEqual(credentials.url, 'https://api.xero.com/oauth/Authorize?oauth_token=token')
+
+    @patch('requests.post')
+    def test_url_with_scope(self, r_post):
+        "The request token URL includes the scope parameter"
+        r_post.return_value = Mock(
+            status_code=200,
+            text='oauth_token=token&oauth_token_secret=token_secret'
+        )
+
+        credentials = PublicCredentials(
+            consumer_key='key',
+            consumer_secret='secret',
+            scope="payroll.endpoint"
+        )
+
+        self.assertIn('scope=payroll.endpoint', credentials.url)
 
     @patch('requests.post')
     def test_verify(self, r_post):
         "Unverfied credentials can be verified"
-        r_post.return_value = Mock(status_code=200, text='oauth_token=verified_token&oauth_token_secret=verified_token_secret')
+        r_post.return_value = Mock(
+            status_code=200,
+            text='oauth_token=verified_token&oauth_token_secret=verified_token_secret'
+        )
 
         credentials = PublicCredentials(
             consumer_key='key',
@@ -145,7 +175,10 @@ class PublicCredentialsTest(unittest.TestCase):
     @patch('requests.post')
     def test_verify_failure(self, r_post):
         "If verification credentials are bad, an error is raised"
-        r_post.return_value = Mock(status_code=401, text='oauth_problem=bad_verifier&oauth_problem_advice=The consumer was denied access to this resource.')
+        r_post.return_value = Mock(
+            status_code=401,
+            text='oauth_problem=bad_verifier&oauth_problem_advice=The consumer was denied access to this resource.'
+        )
 
         credentials = PublicCredentials(
             consumer_key='key',
@@ -183,17 +216,21 @@ class PublicCredentialsTest(unittest.TestCase):
         # Expired
         self.assertTrue(credentials.expired(now=soon))
 
+
 class PartnerCredentialsTest(unittest.TestCase):
     @patch('requests.post')
     def test_initial_constructor(self, r_post):
         "Initial construction causes a request to get a request token"
-        r_post.return_value = Mock(status_code=200, text='oauth_token=token&oauth_token_secret=token_secret')
+        r_post.return_value = Mock(
+            status_code=200,
+            text='oauth_token=token&oauth_token_secret=token_secret'
+        )
 
         credentials = PartnerCredentials(
             consumer_key='key',
             consumer_secret='secret',
             rsa_key='abc',
-            client_cert=('/fake/path', '/fake/otherpath')
+            scope='payroll.endpoint'
         )
 
         # A HTTP request was made
@@ -210,19 +247,22 @@ class PartnerCredentialsTest(unittest.TestCase):
             'consumer_secret': 'secret',
             'oauth_token': 'token',
             'oauth_token_secret': 'token_secret',
-            'verified': False
+            'verified': False,
+            'scope': 'payroll.endpoint'
         })
 
     @patch('requests.post')
     def test_refresh(self, r_post):
         "Refresh function gets a new token"
-        r_post.return_value = Mock(status_code=200, text='oauth_token=token2&oauth_token_secret=token_secret2&oauth_session_handle=session')
+        r_post.return_value = Mock(
+            status_code=200,
+            text='oauth_token=token2&oauth_token_secret=token_secret2&oauth_session_handle=session'
+        )
 
         credentials = PartnerCredentials(
             consumer_key='key',
             consumer_secret='secret',
             rsa_key="key",
-            client_cert=None,
             oauth_token='token',
             oauth_token_secret='token_secret',
             verified=True

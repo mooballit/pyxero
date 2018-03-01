@@ -1,14 +1,22 @@
 from __future__ import unicode_literals
+
 import datetime
 import requests
+
+from oauthlib.oauth1 import (
+    SIGNATURE_RSA, SIGNATURE_TYPE_AUTH_HEADER, SIGNATURE_HMAC
+)
 from requests_oauthlib import OAuth1
-from oauthlib.oauth1 import (SIGNATURE_RSA, SIGNATURE_TYPE_AUTH_HEADER,
-                             SIGNATURE_HMAC)
 from six.moves.urllib.parse import urlencode, parse_qs
 
-from .constants import (XERO_BASE_URL, XERO_PARTNER_BASE_URL,
-                        REQUEST_TOKEN_URL, AUTHORIZE_URL, ACCESS_TOKEN_URL)
-from .exceptions import *
+from .constants import (
+    XERO_BASE_URL, REQUEST_TOKEN_URL, AUTHORIZE_URL, ACCESS_TOKEN_URL
+)
+from .exceptions import (
+    XeroBadRequest, XeroException, XeroExceptionUnknown, XeroForbidden,
+    XeroInternalError, XeroNotAvailable, XeroNotFound, XeroNotImplemented,
+    XeroNotVerified, XeroRateLimitExceeded, XeroUnauthorized
+)
 
 
 OAUTH_EXPIRY_SECONDS = 3600 # Default unless a response reports differently
@@ -89,7 +97,8 @@ class PublicCredentials(object):
     def __init__(self, consumer_key, consumer_secret,
                  callback_uri=None, verified=False,
                  oauth_token=None, oauth_token_secret=None,
-                 oauth_expires_at=None, oauth_authorization_expires_at=None):
+                 oauth_expires_at=None, oauth_authorization_expires_at=None,
+                 scope=None, user_agent=None):
         """Construct the auth instance.
 
         Must provide the consumer key and secret.
@@ -97,6 +106,7 @@ class PublicCredentials(object):
         Xero verification process will redirect to that URL when
 
         """
+        from xero import __version__ as VERSION
         self.consumer_key = consumer_key
         self.consumer_secret = consumer_secret
         self.callback_uri = callback_uri
@@ -104,6 +114,12 @@ class PublicCredentials(object):
         self._oauth = None
         self.oauth_expires_at = oauth_expires_at
         self.oauth_authorization_expires_at = oauth_authorization_expires_at
+        self.scope = scope
+
+        if user_agent is None:
+            self.user_agent = 'pyxero/%s ' % VERSION + requests.utils.default_user_agent()
+        else:
+            self.user_agent = user_agent
 
         self.base_url = XERO_BASE_URL
         self._signature_method = SIGNATURE_HMAC
@@ -111,7 +127,6 @@ class PublicCredentials(object):
         # These are not strictly used by Public Credentials, but
         # are reserved for use by other credentials (i.e. Partner)
         self.rsa_key = None
-        self.client_cert = None
         self.oauth_session_handle = None
 
         self._init_credentials(oauth_token, oauth_token_secret)
@@ -143,7 +158,8 @@ class PublicCredentials(object):
             )
 
             url = self.base_url + REQUEST_TOKEN_URL
-            response = requests.post(url=url, auth=oauth, cert=self.client_cert)
+            headers = {'User-Agent': self.user_agent}
+            response = requests.post(url=url, headers=headers, auth=oauth)
             self._process_oauth_response(response)
 
     def _init_oauth(self, oauth_token, oauth_token_secret):
@@ -236,7 +252,7 @@ class PublicCredentials(object):
                 'consumer_key', 'consumer_secret', 'callback_uri',
                 'verified', 'oauth_token', 'oauth_token_secret',
                 'oauth_session_handle', 'oauth_expires_at',
-                'oauth_authorization_expires_at'
+                'oauth_authorization_expires_at', 'scope'
             )
             if getattr(self, attr) is not None
         )
@@ -257,7 +273,8 @@ class PublicCredentials(object):
 
         # Make the verification request, gettiung back an access token
         url = self.base_url + ACCESS_TOKEN_URL
-        response = requests.post(url=url, auth=oauth, cert=self.client_cert)
+        headers = {'User-Agent': self.user_agent}
+        response = requests.post(url=url, headers=headers, auth=oauth)
         self._process_oauth_response(response)
         self.verified = True
 
@@ -265,8 +282,13 @@ class PublicCredentials(object):
     def url(self):
         "Returns the URL that can be visited to obtain a verifier code"
         # The authorize url is always api.xero.com
+        query_string = {'oauth_token': self.oauth_token}
+
+        if self.scope:
+            query_string['scope'] = self.scope
+
         url = XERO_BASE_URL + AUTHORIZE_URL + '?' + \
-              urlencode({'oauth_token': self.oauth_token})
+              urlencode(query_string)
         return url
 
     @property
@@ -302,29 +324,25 @@ class PartnerCredentials(PublicCredentials):
 
         >>> rsa_key = "-----BEGIN RSA PRIVATE KEY----- ..."
 
-     2) You'll need to pass a tuple to the Entrust certificate pair.
-
-        >>> client_cert = ('/path/to/entrust-cert.pem',
-                           '/path/to/entrust-private-nopass.pem')
-
-     3) Once a token has expired, you can refresh it to get another 30 mins
+     2) Once a token has expired, you can refresh it to get another 30 mins
 
         >>> credentials = PartnerCredentials(**state)
         >>> if credentials.expired():
                 credentials.refresh()
 
-     4) Authorization expiry and token expiry become different things.
+     3) Authorization expiry and token expiry become different things.
 
         oauth_expires_at tells when the current token expires (~30 min window)
 
         oauth_authorization_expires_at tells when the overall access
         permissions expire (~10 year window)
     """
-    def __init__(self, consumer_key, consumer_secret, rsa_key, client_cert,
+    def __init__(self, consumer_key, consumer_secret, rsa_key,
                  callback_uri=None, verified=False,
                  oauth_token=None, oauth_token_secret=None,
                  oauth_expires_at=None, oauth_authorization_expires_at=None,
-                 oauth_session_handle=None):
+                 oauth_session_handle=None, scope=None, user_agent=None,
+                 **kwargs):
         """Construct the auth instance.
 
         Must provide the consumer key and secret.
@@ -332,6 +350,7 @@ class PartnerCredentials(PublicCredentials):
         Xero verification process will redirect to that URL when
 
         """
+        from xero import __version__ as VERSION
         self.consumer_key = consumer_key
         self.consumer_secret = consumer_secret
         self.callback_uri = callback_uri
@@ -339,12 +358,16 @@ class PartnerCredentials(PublicCredentials):
         self._oauth = None
         self.oauth_expires_at = oauth_expires_at
         self.oauth_authorization_expires_at = oauth_authorization_expires_at
+        self.scope = scope
+        if user_agent is None:
+            self.user_agent = 'pyxero/%s ' % VERSION + requests.utils.default_user_agent()
+        else:
+            self.user_agent = user_agent
 
         self._signature_method = SIGNATURE_RSA
-        self.base_url = XERO_PARTNER_BASE_URL
+        self.base_url = XERO_BASE_URL
 
         self.rsa_key = rsa_key
-        self.client_cert = client_cert
         self.oauth_session_handle = oauth_session_handle
 
         self._init_credentials(oauth_token, oauth_token_secret)
@@ -363,7 +386,8 @@ class PartnerCredentials(PublicCredentials):
         )
 
         # Make the verification request, getting back an access token
+        headers = {'User-Agent': self.user_agent}
         params = {'oauth_session_handle': self.oauth_session_handle}
         response = requests.post(url=self.base_url + ACCESS_TOKEN_URL,
-                params=params, auth=oauth, cert=self.client_cert)
+                params=params, headers=headers, auth=oauth)
         self._process_oauth_response(response)

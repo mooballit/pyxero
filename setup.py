@@ -1,13 +1,24 @@
 #/usr/bin/env python
+import io
+import re
 from setuptools import setup
-from xero import VERSION
 
-with open('README.md') as readme:
-    long_description = str(readme.read())
+
+with io.open('./xero/__init__.py', encoding='utf8') as version_file:
+    version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", version_file.read(), re.M)
+    if version_match:
+        version = version_match.group(1)
+    else:
+        raise RuntimeError("Unable to find version string.")
+
+
+with io.open('README.md', encoding='utf8') as readme:
+    long_description = readme.read()
+
 
 setup(
     name='pyxero',
-    version=VERSION,
+    version=version,
     description='Python API for accessing the REST API of the Xero accounting tool.',
     long_description=long_description,
     author='Russell Keith-Magee',
@@ -19,6 +30,11 @@ setup(
         'requests>=1.1.0',
         'requests-oauthlib>=0.3.0',
         'python-dateutil>=2.1',
+        'PyJWT==1.4.0', # This is required as part of oauthlib but doesn't seem to get included sometimes.
+        'cryptography>=1.3.1', # As above, but fixes issue with missing module imports not picked up for some reason.
+    ],
+    tests_require=[
+        'mock',
     ],
     license='New BSD',
     classifiers=[
@@ -28,7 +44,6 @@ setup(
         'License :: OSI Approved :: BSD License',
         'Operating System :: OS Independent',
         'Programming Language :: Python',
-        'Programming Language :: Python :: 2.6',
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3.3',
         'Programming Language :: Python :: 3.4',
