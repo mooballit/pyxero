@@ -53,7 +53,7 @@ class Manager(object):
         out = {}
         if len(deep_list) > 2:
             lists = [l for l in deep_list if isinstance(l, tuple)]
-            keys = [l for l in deep_list if isinstance(l, unicode)]
+            keys = [l for l in deep_list if isinstance(l, str)]
             for key, data in zip(keys, lists):
 
                 if len(data) == 1:
